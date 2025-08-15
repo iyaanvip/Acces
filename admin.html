@@ -2,15 +2,17 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Admin Panel - Kirim Notifikasi</title>
+  <title>Admin Kirim Notifikasi</title>
 </head>
 <body>
   <h1>Kirim Notifikasi</h1>
+  <input type="file" id="svcFile"><br><br>
   <input id="title" placeholder="Judul"><br>
   <input id="body" placeholder="Pesan"><br>
-  <input id="icon" placeholder="URL Icon"><br>
-  <input id="link" placeholder="Link saat klik"><br>
+  <input id="icon" placeholder="URL Icon (opsional)"><br>
+  <input id="link" placeholder="URL saat klik (opsional)"><br>
   <button id="sendNotif">Kirim</button>
+  <div id="status"></div>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -30,17 +32,94 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    document.getElementById("sendNotif").addEventListener("click", () => {
-      const title = document.getElementById("title").value;
-      const body = document.getElementById("body").value;
-      const icon = document.getElementById("icon").value;
-      const link = document.getElementById("link").value;
+    let serviceAccount = null;
 
-      db.ref("notifications").push({
-        title, body, icon, link
+    document.getElementById("svcFile").addEventListener("change", function() {
+      const file = this.files[0];
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          serviceAccount = JSON.parse(e.target.result);
+          alert("Service Account JSON dimuat!");
+        } catch {
+          alert("File JSON tidak valid!");
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    const b64u = b => b.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    const strToUint8 = str => { const b=atob(str); const u=new Uint8Array(b.length); for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i); return u; };
+    const pemToPkcs8 = pem => strToUint8(pem.replace(/-----BEGIN PRIVATE KEY-----/,'').replace(/-----END PRIVATE KEY-----/,'').replace(/\s+/g,''));
+    async function importPrivateKey(pem){
+      return await crypto.subtle.importKey('pkcs8', pemToPkcs8(pem).buffer, {name:'RSASSA-PKCS1-v1_5', hash:'SHA-256'}, false, ['sign']);
+    }
+    async function signJwtRS256(header, payload, privateKeyPem){
+      const key = await importPrivateKey(privateKeyPem);
+      const input = b64u(btoa(JSON.stringify(header))) + '.' + b64u(btoa(JSON.stringify(payload)));
+      const sigBuf = await crypto.subtle.sign({name:'RSASSA-PKCS1-v1_5'}, key, new TextEncoder().encode(input));
+      return input + '.' + b64u(btoa(String.fromCharCode(...new Uint8Array(sigBuf))));
+    }
+    async function getAccessToken(sa){
+      const now = Math.floor(Date.now()/1000);
+      const header = { alg:'RS256', typ:'JWT' };
+      const payload = {
+        iss: sa.client_email,
+        sub: sa.client_email,
+        scope: 'https://www.googleapis.com/auth/firebase.messaging',
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600
+      };
+      const assertion = await signJwtRS256(header, payload, sa.private_key);
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion
+        })
       });
+      if (!res.ok) throw new Error("Gagal OAuth token");
+      return (await res.json()).access_token;
+    }
+    async function sendNotif(projectId, accessToken, data){
+      const snap = await db.ref("tokens").once("value");
+      const tokens = Object.values(snap.val() || {});
+      let sent = 0;
+      for (const t of tokens) {
+        const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+          method:'POST',
+          headers:{
+            'Authorization': 'Bearer ' + accessToken,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ message: { token: t, data } })
+        });
+        if (res.ok) sent++;
+      }
+      return sent;
+    }
 
-      alert("Notifikasi terkirim!");
+    document.getElementById("sendNotif").addEventListener("click", async () => {
+      const status = document.getElementById("status");
+      if (!serviceAccount) {
+        alert("Upload Service Account JSON dulu!");
+        return;
+      }
+      try {
+        const token = await getAccessToken(serviceAccount);
+        const sentCount = await sendNotif(serviceAccount.project_id, token, {
+          title: document.getElementById("title").value,
+          body: document.getElementById("body").value,
+          icon: document.getElementById("icon").value,
+          link: document.getElementById("link").value
+        });
+        status.textContent = `Berhasil mengirim ke ${sentCount} user`;
+      } catch (err) {
+        console.error(err);
+        status.textContent = "Gagal mengirim notifikasi";
+      }
     });
   </script>
 </body>
