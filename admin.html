@@ -1,73 +1,47 @@
-<!doctype html>
-<html lang="id">
+<!DOCTYPE html>
+<html>
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Admin — Kirim Notifikasi</title>
-<style>
-  body{font-family:system-ui;margin:32px auto;max-width:720px;padding:0 16px}
-  input,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;margin-top:8px}
-  button{margin-top:12px;padding:10px 14px;border-radius:8px;background:#00bcd4;border:none;color:#000;font-weight:700;cursor:pointer}
-  label{display:block;margin-top:12px;font-weight:600}
-  .muted{opacity:.8;margin-top:10px}
-</style>
+  <meta charset="UTF-8">
+  <title>Admin Panel - Kirim Notifikasi</title>
 </head>
 <body>
-  <h1>Admin — Kirim Notifikasi</h1>
+  <h1>Kirim Notifikasi</h1>
+  <input id="title" placeholder="Judul"><br>
+  <input id="body" placeholder="Pesan"><br>
+  <input id="icon" placeholder="URL Icon"><br>
+  <input id="link" placeholder="Link saat klik"><br>
+  <button id="sendNotif">Kirim</button>
 
-  <label>Judul</label>
-  <input id="title" placeholder="Judul notifikasi">
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
-  <label>Pesan</label>
-  <textarea id="message" rows="5" placeholder="Isi pesan"></textarea>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCs_Jb63WZGevle_OXM2jlOS36aftE_29Y",
+      authDomain: "adminvvip.firebaseapp.com",
+      databaseURL: "https://adminvvip-default-rtdb.firebaseio.com",
+      projectId: "adminvvip",
+      storageBucket: "adminvvip.firebasestorage.app",
+      messagingSenderId: "911235567086",
+      appId: "1:911235567086:web:8d178b73c3b48b790ed2ff",
+      measurementId: "G-M5RS20R3P3"
+    };
 
-  <label>Image / Icon URL (opsional)</label>
-  <input id="icon" placeholder="https://.../icon.png">
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-  <label>Click URL (opsional)</label>
-  <input id="clickurl" placeholder="https://... (akan dibuka saat notif diklik)">
+    document.getElementById("sendNotif").addEventListener("click", () => {
+      const title = document.getElementById("title").value;
+      const body = document.getElementById("body").value;
+      const icon = document.getElementById("icon").value;
+      const link = document.getElementById("link").value;
 
-  <button id="send">Kirim ke Semua</button>
+      db.ref("notifications").push({
+        title, body, icon, link
+      });
 
-  <p class="muted">Bin ID & server key sudah terpasang (menggunakan JSONBin kamu). Jika ingin ganti, edit variabel BIN_ID / API_KEY pada file.</p>
-
-<script>
-/*
-  konfigurasi JSONBin (sudah diisi dari kamu)
-*/
-const BIN_ID = "689f328dd0ea881f4059e086";
-const API_KEY = "$2a$10$IxJzK95mhbwswU9V0jGsPuxSq04KuMH3DdozB4PuMjz011pgzO07u";
-
-document.getElementById('send').onclick = async () => {
-  const title = document.getElementById('title').value.trim() || 'Notifikasi';
-  const message = document.getElementById('message').value.trim() || '';
-  const icon = document.getElementById('icon').value.trim() || '';
-  const clickurl = document.getElementById('clickurl').value.trim() || '';
-
-  const payload = {
-    title: title,
-    message: message,
-    icon: icon,
-    url: clickurl,
-    timestamp: Date.now()
-  };
-
-  try {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': API_KEY
-      },
-      body: JSON.stringify(payload)
+      alert("Notifikasi terkirim!");
     });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    alert('Notifikasi dikirim (saved to bin).');
-  } catch (err) {
-    console.error('Send failed', err);
-    alert('Gagal kirim: ' + err.message);
-  }
-};
-</script>
+  </script>
 </body>
 </html>

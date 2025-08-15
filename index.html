@@ -1,129 +1,52 @@
-<!doctype html>
-<html lang="id">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>User — Notifikasi Realtime (Polling JSONBin)</title>
-  <style>
-    :root { color-scheme: dark light; }
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:720px;margin:40px auto;padding:0 16px;background:#0b0f14;color:#e6f1ff}
-    h1{color:#00bcd4;margin-bottom:8px}
-    .status{margin:12px 0;padding:12px;border-radius:10px;background:#0f1720;color:#cfefff}
-    .ok{background:#0f2b20;color:#b6ffd4}
-    .err{background:#2a1212;color:#ffd2d2}
-    .muted{opacity:.85}
-    code{background:#111723;padding:2px 6px;border-radius:6px}
-    a{color:#7bd1ff}
-  </style>
+  <meta charset="UTF-8">
+  <title>Realtime Notifikasi - User</title>
 </head>
 <body>
-  <h1>Notifikasi Realtime (Polling)</h1>
-  <div id="status" class="status">Menunggu inisialisasi…</div>
-  <p class="muted">
-    Halaman ini cek pesan tiap <strong>5 detik</strong>.
-    Pastikan situs ini dibuka lewat <strong>https</strong> atau <strong>localhost</strong>, lalu klik <em>Izinkan</em> saat diminta izin notifikasi.
-  </p>
+  <h1>Notifikasi Realtime</h1>
+  <button id="enableNotif">Aktifkan Notifikasi</button>
 
-<script>
-/* ====== KONFIGURASI ====== */
-const BIN_ID    = "689f328dd0ea881f4059e086";       // <-- ganti dengan BIN kamu
-const API_KEY   = "$2a$10$3tMcLG920LqUnfDOGXlfS.cFy1TbnMrmzSeyfdzD9StKs7AInQGaK";   // <-- tempel restricted key (READ-only)
-const INTERVAL  = 5000;                              // ms
-/* ========================= */
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
-const $status = document.getElementById('status');
-let lastMark = 0; // penanda perubahan terakhir
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCs_Jb63WZGevle_OXM2jlOS36aftE_29Y",
+      authDomain: "adminvvip.firebaseapp.com",
+      databaseURL: "https://adminvvip-default-rtdb.firebaseio.com",
+      projectId: "adminvvip",
+      storageBucket: "adminvvip.firebasestorage.app",
+      messagingSenderId: "911235567086",
+      appId: "1:911235567086:web:8d178b73c3b48b790ed2ff",
+      measurementId: "G-M5RS20R3P3"
+    };
 
-function setStatus(msg, type="") {
-  $status.className = "status " + (type||"");
-  $status.textContent = msg;
-}
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+    const db = firebase.database();
 
-/* Daftarkan Service Worker */
-async function registerSW() {
-  if (!('serviceWorker' in navigator)) {
-    throw new Error('Browser tidak mendukung Service Worker');
-  }
-  // pastikan file sw.js ada di root yang sama dengan halaman ini
-  const reg = await navigator.serviceWorker.register('/sw.js');
-  await navigator.serviceWorker.ready;
-  return reg;
-}
+    // Register custom service worker sw.js
+    navigator.serviceWorker.register('sw.js').then((registration) => {
+      messaging.useServiceWorker(registration);
+    });
 
-/* Minta izin notifikasi */
-async function askPermission() {
-  if (!('Notification' in window)) {
-    throw new Error('Browser tidak mendukung Notification API');
-  }
-  const perm = await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error('Izin notifikasi ditolak');
-}
-
-/* Ambil data dari JSONBin */
-async function fetchLatest() {
-  const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-    headers: { 'X-Access-Key': API_KEY }
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const data = await res.json();
-  const record   = data.record || {};
-  const meta     = data.metadata || {};
-  // gunakan salah satu penanda perubahan
-  const mark = Number(record.timestamp) || Date.parse(meta.modifiedAt || meta.createdAt || "0") || 0;
-  return { record, mark };
-}
-
-/* Tampilkan notifikasi via SW */
-async function showViaSW({ title, body, icon, url }) {
-  const reg = await navigator.serviceWorker.ready;
-  return reg.showNotification(title || 'Notifikasi', {
-    body: body || '',
-    icon: icon || 'https://cdn-icons-png.flaticon.com/512/1827/1827272.png',
-    badge: icon || undefined,
-    data: url || undefined,
-    vibrate: [60,40,60]
-  });
-}
-
-/* Loop polling */
-async function pollLoop() {
-  try {
-    const { record, mark } = await fetchLatest();
-    if (mark > lastMark) {
-      lastMark = mark;
-      await showViaSW({
-        title: record.title || 'Notifikasi',
-        body : record.message || '',
-        icon : record.icon || '',
-        url  : record.url || ''
-      });
-      console.log('[notify]', record);
-    }
-    setStatus('Aktif — polling setiap 5s', 'ok');
-  } catch (err) {
-    console.warn('Polling error:', err);
-    setStatus('Terdeteksi error polling: ' + err.message, 'err');
-  } finally {
-    setTimeout(pollLoop, INTERVAL);
-  }
-}
-
-/* Boot */
-(async () => {
-  try {
-    await registerSW();
-    await askPermission();
-    setStatus('Service Worker & izin notifikasi siap. Memulai polling…', 'ok');
-    pollLoop();
-  } catch (e) {
-    console.error('Init gagal:', e);
-    setStatus('Inisialisasi gagal: ' + e.message, 'err');
-    // fallback minimal: jika SW gagal, coba Notification langsung
-    if (Notification.permission === 'granted') {
-      new Notification('Notifikasi aktif tanpa SW', { body: 'Fallback client only.' });
-    }
-  }
-})();
-</script>
+    document.getElementById("enableNotif").addEventListener("click", async () => {
+      try {
+        await Notification.requestPermission();
+        const token = await messaging.getToken({
+          vapidKey: "BFJKG8J6cnoeIESulLITwBFqNGIQ8CA74fELmWOR5tox-87kIb3HlfZBijG4FfiuNkBOYp0BNbweTXpd46PpS10"
+        });
+        if (token) {
+          db.ref("tokens").push(token);
+          alert("Notifikasi diaktifkan!");
+        }
+      } catch (err) {
+        console.error("Gagal dapat token:", err);
+      }
+    });
+  </script>
 </body>
 </html>
