@@ -1,18 +1,23 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <title>Realtime Notifikasi - User</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>User · Notifikasi Realtime</title>
 </head>
 <body>
   <h1>Notifikasi Realtime</h1>
+  <p>Halaman ini meminta izin notifikasi, mendaftarkan token FCM, dan menyimpannya ke Realtime Database.</p>
   <button id="enableNotif">Aktifkan Notifikasi</button>
+  <pre id="log" style="white-space:pre-wrap"></pre>
 
+  <!-- Firebase compat (lebih simpel buat SW & onMessage) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
   <script>
+    // --- CONFIG PROJECT KAMU ---
     const firebaseConfig = {
       apiKey: "AIzaSyCs_Jb63WZGevle_OXM2jlOS36aftE_29Y",
       authDomain: "adminvvip.firebaseapp.com",
@@ -23,28 +28,53 @@
       appId: "1:911235567086:web:8d178b73c3b48b790ed2ff",
       measurementId: "G-M5RS20R3P3"
     };
+    const VAPID_PUBLIC_KEY = "BFJKG8J6cnoeIESulLITwBFqNGIQ8CA74fELmWOR5tox-87kIb3HlfZBijG4FfiuNkBOYp0BNbweTXpd46PpS10";
+    // ----------------------------
+
+    const log = (...a) => (document.getElementById('log').textContent += a.join(' ') + '\n');
 
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
     const db = firebase.database();
 
-    // Register custom service worker sw.js
-    navigator.serviceWorker.register('sw.js').then((registration) => {
-      messaging.useServiceWorker(registration);
+    // Register SW custom: sw.js (pastikan di ROOT)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => { log('SW terdaftar:', reg.scope); })
+        .catch(err => log('Gagal daftar SW:', err));
+    } else {
+      log('Service Worker tidak didukung browser ini.');
+    }
+
+    // Foreground message (tab sedang terbuka)
+    messaging.onMessage(payload => {
+      log('Pesan foreground:', JSON.stringify(payload));
+      const n = payload.notification || {};
+      const data = payload.data || {};
+      new Notification(n.title || 'Pesan', {
+        body: n.body || '',
+        icon: n.icon || undefined,
+        data: { url: data.click_action || data.url || '/' }
+      });
     });
 
-    document.getElementById("enableNotif").addEventListener("click", async () => {
+    document.getElementById('enableNotif').addEventListener('click', async () => {
       try {
-        await Notification.requestPermission();
-        const token = await messaging.getToken({
-          vapidKey: "BFJKG8J6cnoeIESulLITwBFqNGIQ8CA74fELmWOR5tox-87kIb3HlfZBijG4FfiuNkBOYp0BNbweTXpd46PpS10"
-        });
-        if (token) {
-          db.ref("tokens").push(token);
-          alert("Notifikasi diaktifkan!");
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') {
+          alert('Izin notifikasi ditolak.');
+          return;
         }
-      } catch (err) {
-        console.error("Gagal dapat token:", err);
+        const token = await messaging.getToken({ vapidKey: VAPID_PUBLIC_KEY });
+        if (!token) throw new Error('Token kosong');
+        log('Token:', token);
+
+        // Simpan token: tokens/<pushId> : token
+        await db.ref('tokens').push(token);
+        alert('Notifikasi diaktifkan & token tersimpan!');
+      } catch (e) {
+        console.error(e); log('Error:', e.message || e);
+        alert('Gagal mengaktifkan notifikasi. Cek console.');
       }
     });
   </script>
