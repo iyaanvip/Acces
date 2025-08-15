@@ -1,54 +1,21 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Admin · Kirim Notifikasi</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; }
-    input, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 10px; margin: 6px 0 14px; }
-    button { padding: 10px 14px; border: 0; border-radius: 10px; cursor: pointer; font-weight: 600; }
-    .primary { background: #111; color: #fff; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    pre { background: #f6f6f6; padding: 12px; border-radius: 10px; }
-  </style>
+  <meta charset="UTF-8">
+  <title>Admin Panel - Kirim Notifikasi</title>
 </head>
 <body>
   <h1>Kirim Notifikasi</h1>
-  <div class="row">
-    <div>
-      <label>Judul</label>
-      <input id="title" placeholder="Judul Notifikasi" />
-    </div>
-    <div>
-      <label>Icon (URL) — opsional</label>
-      <input id="icon" placeholder="https://.../icon.png" />
-    </div>
-  </div>
-  <label>Isi Pesan</label>
-  <textarea id="body" rows="3" placeholder="Isi pesan"></textarea>
+  <input id="title" placeholder="Judul"><br>
+  <input id="body" placeholder="Pesan"><br>
+  <input id="icon" placeholder="URL Icon"><br>
+  <input id="link" placeholder="Link saat klik"><br>
+  <button id="sendNotif">Kirim</button>
 
-  <label>Link saat diklik</label>
-  <input id="link" placeholder="https://alamat.com/halaman" />
-
-  <div class="row">
-    <div>
-      <button id="sendAll" class="primary" title="Kirim ke semua token">Kirim ke Semua</button>
-    </div>
-    <div>
-      <button id="testOne">Tes ke 1 Token (manual)</button>
-    </div>
-  </div>
-
-  <h3>Log</h3>
-  <pre id="log" style="white-space:pre-wrap"></pre>
-
-  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
   <script>
-    // --- CONFIG PROJECT KAMU ---
     const firebaseConfig = {
       apiKey: "AIzaSyCs_Jb63WZGevle_OXM2jlOS36aftE_29Y",
       authDomain: "adminvvip.firebaseapp.com",
@@ -59,108 +26,21 @@
       appId: "1:911235567086:web:8d178b73c3b48b790ed2ff",
       measurementId: "G-M5RS20R3P3"
     };
-    // ❗ Mode pengiriman:
-    const USE_SERVERLESS = false; // false = kirim langsung ke FCM (butuh FCM_SERVER_KEY di bawah)
-    const FCM_SERVER_KEY = "PASTE_LEGACY_SERVER_KEY_DI_SINI"; // ← ganti dgn Legacy Server key kamu!
-    // ----------------------------
-
-    const logEl = document.getElementById('log');
-    const log = (...a) => { logEl.textContent += a.join(' ') + '\n'; };
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    async function getAllTokens() {
-      const snap = await db.ref('tokens').once('value');
-      const raw = snap.val() || {};
-      // unik + bersihkan nilai kosong
-      return [...new Set(Object.values(raw).filter(Boolean))];
-    }
+    document.getElementById("sendNotif").addEventListener("click", () => {
+      const title = document.getElementById("title").value;
+      const body = document.getElementById("body").value;
+      const icon = document.getElementById("icon").value;
+      const link = document.getElementById("link").value;
 
-    async function sendDirectToFCM(tokens, { title, body, icon, link }) {
-      if (!FCM_SERVER_KEY || FCM_SERVER_KEY.includes('PASTE_LEGACY_SERVER_KEY')) {
-        throw new Error('FCM_SERVER_KEY belum diisi (Legacy Server key).');
-      }
-      // Kirim dengan registration_ids (multicast)
-      const payload = {
-        registration_ids: tokens,
-        notification: {
-          title,
-          body,
-          icon: icon || undefined,
-          click_action: link || undefined
-        },
-        data: { click_action: link || '/' } // biar SW dapat juga
-      };
-      const r = await fetch('https://fcm.googleapis.com/fcm/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type':'application/json',
-          'Authorization': 'key=' + FCM_SERVER_KEY
-        },
-        body: JSON.stringify(payload)
+      db.ref("notifications").push({
+        title, body, icon, link
       });
-      const text = await r.text();
-      return { ok: r.ok, status: r.status, text };
-    }
 
-    async function sendViaServerless(tokens, { title, body, icon, link }) {
-      // Kalau nanti kamu pakai Vercel/Netlify function, tinggal arahkan ke endpoint kamu:
-      const payload = { tokens, notification: { title, body, icon, click_action: link } };
-      // Contoh coba endpoint Vercel lalu Netlify
-      async function tryPost(url){
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type':'application/json' },
-          body: JSON.stringify(payload)
-        });
-        return { ok: r.ok, status: r.status, text: await r.text() };
-      }
-      let res = await tryPost('/api/send'); // Vercel
-      if (!res.ok && res.status === 404) res = await tryPost('/.netlify/functions/send'); // Netlify
-      return res;
-    }
-
-    document.getElementById('sendAll').addEventListener('click', async () => {
-      const title = document.getElementById('title').value.trim();
-      const body  = document.getElementById('body').value.trim();
-      const icon  = document.getElementById('icon').value.trim();
-      const link  = document.getElementById('link').value.trim();
-      if (!title || !body) { alert('Judul & pesan wajib diisi'); return; }
-
-      try {
-        const tokens = await getAllTokens();
-        if (!tokens.length) { alert('Belum ada token. Buka index.html dulu dan aktifkan notif.'); return; }
-
-        log('Mengirim ke', tokens.length, 'token...');
-        const res = USE_SERVERLESS
-          ? await sendViaServerless(tokens, { title, body, icon, link })
-          : await sendDirectToFCM(tokens, { title, body, icon, link });
-
-        log('Status:', res.status, '\n', res.text);
-        alert(res.ok ? 'Notifikasi terkirim!' : 'Gagal kirim. Cek log.');
-      } catch (e) {
-        console.error(e); log('Error:', e.message || e);
-        alert('Gagal kirim. Cek log.');
-      }
-    });
-
-    // Tombol tes ke 1 token (paste manual)
-    document.getElementById('testOne').addEventListener('click', async () => {
-      const token = prompt('Paste 1 token FCM untuk tes:');
-      if (!token) return;
-      const title = document.getElementById('title').value.trim() || 'Tes';
-      const body  = document.getElementById('body').value.trim() || 'Halo dari admin!';
-      const icon  = document.getElementById('icon').value.trim();
-      const link  = document.getElementById('link').value.trim();
-
-      try {
-        const res = await sendDirectToFCM([token], { title, body, icon, link });
-        log('TES 1 TOKEN → Status:', res.status, '\n', res.text);
-        alert(res.ok ? 'Berhasil kirim ke 1 token' : 'Gagal kirim. Cek log.');
-      } catch (e) {
-        console.error(e); log('Error:', e.message || e);
-      }
+      alert("Notifikasi terkirim!");
     });
   </script>
 </body>

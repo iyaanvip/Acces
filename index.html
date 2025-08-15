@@ -1,30 +1,18 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>User · Notifikasi Realtime</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 16px; }
-    button { padding: 10px 14px; border: 0; border-radius: 10px; cursor: pointer; font-weight: 600; }
-    .primary { background: #111; color: #fff; }
-    pre { background: #f5f5f5; padding: 12px; border-radius: 10px; overflow:auto; }
-  </style>
+  <meta charset="UTF-8">
+  <title>Realtime Notifikasi - User</title>
 </head>
 <body>
   <h1>Notifikasi Realtime</h1>
-  <p>Halaman ini meminta izin notifikasi, mendaftarkan token FCM, dan menyimpannya ke Realtime Database.</p>
-  <button id="enableNotif" class="primary">Aktifkan Notifikasi</button>
-  <p>Token dan log:</p>
-  <pre id="log" style="white-space:pre-wrap"></pre>
+  <button id="enableNotif">Aktifkan Notifikasi</button>
 
-  <!-- Firebase compat (mudah untuk SW & onMessage) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
   <script>
-    // --- CONFIG PROJECT KAMU ---
     const firebaseConfig = {
       apiKey: "AIzaSyCs_Jb63WZGevle_OXM2jlOS36aftE_29Y",
       authDomain: "adminvvip.firebaseapp.com",
@@ -35,56 +23,28 @@
       appId: "1:911235567086:web:8d178b73c3b48b790ed2ff",
       measurementId: "G-M5RS20R3P3"
     };
-    const VAPID_PUBLIC_KEY = "BFJKG8J6cnoeIESulLITwBFqNGIQ8CA74fELmWOR5tox-87kIb3HlfZBijG4FfiuNkBOYp0BNbweTXpd46PpS10";
-    // ----------------------------
-
-    const logEl = document.getElementById('log');
-    const log = (...a) => { logEl.textContent += a.join(' ') + '\n'; };
 
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
     const db = firebase.database();
 
-    // Register Service Worker (custom name: sw.js) di ROOT
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
-        .then(reg => log('SW terdaftar:', reg.scope))
-        .catch(err => log('Gagal daftar SW:', err));
-    } else {
-      log('Service Worker tidak didukung browser ini.');
-    }
-
-    // Foreground message (tab aktif)
-    messaging.onMessage(payload => {
-      log('Pesan foreground:', JSON.stringify(payload));
-      const n = payload.notification || {};
-      const data = payload.data || {};
-      // Tampilkan notifikasi juga saat foreground (opsional)
-      if (Notification.permission === 'granted') {
-        new Notification(n.title || 'Pesan', {
-          body: n.body || '',
-          icon: n.icon || undefined,
-          data: { url: data.click_action || data.url || '/' }
-        });
-      }
+    // Register custom service worker sw.js
+    navigator.serviceWorker.register('sw.js').then((registration) => {
+      messaging.useServiceWorker(registration);
     });
 
-    document.getElementById('enableNotif').addEventListener('click', async () => {
+    document.getElementById("enableNotif").addEventListener("click", async () => {
       try {
-        const perm = await Notification.requestPermission();
-        if (perm !== 'granted') {
-          alert('Izin notifikasi ditolak.'); return;
+        await Notification.requestPermission();
+        const token = await messaging.getToken({
+          vapidKey: "BFJKG8J6cnoeIESulLITwBFqNGIQ8CA74fELmWOR5tox-87kIb3HlfZBijG4FfiuNkBOYp0BNbweTXpd46PpS10"
+        });
+        if (token) {
+          db.ref("tokens").push(token);
+          alert("Notifikasi diaktifkan!");
         }
-        const token = await messaging.getToken({ vapidKey: VAPID_PUBLIC_KEY });
-        if (!token) throw new Error('Token kosong');
-        log('Token FCM:', token);
-
-        // Simpan token ke DB: tokens/<pushId> : token
-        await db.ref('tokens').push(token);
-        alert('Notifikasi diaktifkan & token tersimpan!');
-      } catch (e) {
-        console.error(e); log('Error:', e.message || e);
-        alert('Gagal mengaktifkan notifikasi. Cek console/log.');
+      } catch (err) {
+        console.error("Gagal dapat token:", err);
       }
     });
   </script>
