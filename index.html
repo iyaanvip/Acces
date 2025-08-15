@@ -5,112 +5,122 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>User — Notifikasi Realtime (Polling JSONBin)</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:680px;margin:40px auto;padding:0 16px}
-    h1{color:#00bcd4}
-    .status{margin:12px 0;padding:10px;border-radius:8px;background:#0f1720;color:#cfefff}
-    .muted{opacity:.8;font-size:0.9rem}
-    code{background:#f3f4f6;padding:2px 6px;border-radius:6px}
+    :root { color-scheme: dark light; }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:720px;margin:40px auto;padding:0 16px;background:#0b0f14;color:#e6f1ff}
+    h1{color:#00bcd4;margin-bottom:8px}
+    .status{margin:12px 0;padding:12px;border-radius:10px;background:#0f1720;color:#cfefff}
+    .ok{background:#0f2b20;color:#b6ffd4}
+    .err{background:#2a1212;color:#ffd2d2}
+    .muted{opacity:.85}
+    code{background:#111723;padding:2px 6px;border-radius:6px}
+    a{color:#7bd1ff}
   </style>
 </head>
 <body>
   <h1>Notifikasi Realtime (Polling)</h1>
-  <div class="status" id="status">Menunggu inisialisasi…</div>
-  <p class="muted">Halaman ini akan memeriksa pesan setiap 5 detik. Pastikan kamu membuka halaman ini sekali dan klik <strong>Izinkan</strong> saat diminta izin notifikasi.</p>
+  <div id="status" class="status">Menunggu inisialisasi…</div>
+  <p class="muted">
+    Halaman ini cek pesan tiap <strong>5 detik</strong>.
+    Pastikan situs ini dibuka lewat <strong>https</strong> atau <strong>localhost</strong>, lalu klik <em>Izinkan</em> saat diminta izin notifikasi.
+  </p>
 
 <script>
-/*
-  EDITABLE VALUES (sudah terisi dengan bin kamu)
-  - BIN_ID: id bin kamu
-*/
-const BIN_ID = "689f328dd0ea881f4059e086"; // <- BIN ID kamu
-let lastTimestamp = 0;
-const POLL_INTERVAL = 5000; // ms
+/* ====== KONFIGURASI ====== */
+const BIN_ID    = "689f328dd0ea881f4059e086";       // <-- ganti dengan BIN kamu
+const API_KEY   = "$2a$10$3tMcLG920LqUnfDOGXlfS.cFy1TbnMrmzSeyfdzD9StKs7AInQGaK";   // <-- tempel restricted key (READ-only)
+const INTERVAL  = 5000;                              // ms
+/* ========================= */
 
 const $status = document.getElementById('status');
+let lastMark = 0; // penanda perubahan terakhir
 
-function setStatus(t){
-  $status.textContent = t;
+function setStatus(msg, type="") {
+  $status.className = "status " + (type||"");
+  $status.textContent = msg;
 }
 
-// 1) Daftarkan service worker
-async function registerSW(){
+/* Daftarkan Service Worker */
+async function registerSW() {
   if (!('serviceWorker' in navigator)) {
-    setStatus('Service Worker tidak didukung di browser ini.');
-    throw new Error('no-sw');
+    throw new Error('Browser tidak mendukung Service Worker');
   }
-  try {
-    const reg = await navigator.serviceWorker.register('/sw.js');
-    console.log('SW registered', reg.scope);
-    setStatus('Service Worker terdaftar. Minta izin notifikasi selanjutnya...');
-    return reg;
-  } catch (err) {
-    console.error('SW register failed', err);
-    setStatus('Gagal mendaftar Service Worker.');
-    throw err;
-  }
+  // pastikan file sw.js ada di root yang sama dengan halaman ini
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+  return reg;
 }
 
-// 2) Minta permission notifikasi (user)
-async function askPermission(){
+/* Minta izin notifikasi */
+async function askPermission() {
   if (!('Notification' in window)) {
-    setStatus('Browser tidak mendukung notifikasi.');
-    throw new Error('no-notification');
+    throw new Error('Browser tidak mendukung Notification API');
   }
   const perm = await Notification.requestPermission();
-  setStatus('Izin notifikasi: ' + perm);
-  if (perm !== 'granted') throw new Error('permission-denied');
-  return perm;
+  if (perm !== 'granted') throw new Error('Izin notifikasi ditolak');
 }
 
-// 3) Polling JSONBin every X seconds
-async function pollLoop(){
+/* Ambil data dari JSONBin */
+async function fetchLatest() {
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+    headers: { 'X-Access-Key': API_KEY }
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const record   = data.record || {};
+  const meta     = data.metadata || {};
+  // gunakan salah satu penanda perubahan
+  const mark = Number(record.timestamp) || Date.parse(meta.modifiedAt || meta.createdAt || "0") || 0;
+  return { record, mark };
+}
+
+/* Tampilkan notifikasi via SW */
+async function showViaSW({ title, body, icon, url }) {
+  const reg = await navigator.serviceWorker.ready;
+  return reg.showNotification(title || 'Notifikasi', {
+    body: body || '',
+    icon: icon || 'https://cdn-icons-png.flaticon.com/512/1827/1827272.png',
+    badge: icon || undefined,
+    data: url || undefined,
+    vibrate: [60,40,60]
+  });
+}
+
+/* Loop polling */
+async function pollLoop() {
   try {
-    // fetch latest
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const j = await res.json();
-    const record = j.record || {};
-    const ts = record.timestamp || 0;
-    if (ts && ts > lastTimestamp) {
-      lastTimestamp = ts;
-      const title = record.title || 'Notifikasi';
-      const body  = record.message || '';
-      const icon  = record.icon || '';
-      // show notification via SW registration
-      const reg = await navigator.serviceWorker.ready;
-      // Use showNotification on registration for better compatibility
-      reg.showNotification(title, {
-        body: body,
-        icon: icon || 'https://cdn-icons-png.flaticon.com/512/1827/1827272.png',
-        badge: icon || undefined,
-        data: record.url || undefined,
-        vibrate: [60,40,60]
+    const { record, mark } = await fetchLatest();
+    if (mark > lastMark) {
+      lastMark = mark;
+      await showViaSW({
+        title: record.title || 'Notifikasi',
+        body : record.message || '',
+        icon : record.icon || '',
+        url  : record.url || ''
       });
-      console.log('Displayed notification', title, body);
+      console.log('[notify]', record);
     }
+    setStatus('Aktif — polling setiap 5s', 'ok');
   } catch (err) {
-    console.warn('Polling error', err);
-    // don't flood status with every error; show a friendly message
-    setStatus('Terdeteksi error polling (cek console).');
+    console.warn('Polling error:', err);
+    setStatus('Terdeteksi error polling: ' + err.message, 'err');
   } finally {
-    setTimeout(pollLoop, POLL_INTERVAL);
+    setTimeout(pollLoop, INTERVAL);
   }
 }
 
-// Boot sequence
-(async function init(){
+/* Boot */
+(async () => {
   try {
     await registerSW();
     await askPermission();
-    setStatus('Aktif — menunggu notifikasi (polling every 5s)');
-    // start polling
+    setStatus('Service Worker & izin notifikasi siap. Memulai polling…', 'ok');
     pollLoop();
   } catch (e) {
-    console.error('Init failed', e);
-    if (e.message === 'permission-denied') {
-      setStatus('Izin notifikasi ditolak. Silakan beri izin untuk menerima notifikasi.');
-    } else {
-      setStatus('Inisialisasi gagal — lihat console.');
+    console.error('Init gagal:', e);
+    setStatus('Inisialisasi gagal: ' + e.message, 'err');
+    // fallback minimal: jika SW gagal, coba Notification langsung
+    if (Notification.permission === 'granted') {
+      new Notification('Notifikasi aktif tanpa SW', { body: 'Fallback client only.' });
     }
   }
 })();
