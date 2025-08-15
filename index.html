@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>User — Notifikasi Realtime (Polling JSONBin)</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:680px;margin:40px auto;padding:0 16px}
+    h1{color:#00bcd4}
+    .status{margin:12px 0;padding:10px;border-radius:8px;background:#0f1720;color:#cfefff}
+    .muted{opacity:.8;font-size:0.9rem}
+    code{background:#f3f4f6;padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <h1>Notifikasi Realtime (Polling)</h1>
+  <div class="status" id="status">Menunggu inisialisasi…</div>
+  <p class="muted">Halaman ini akan memeriksa pesan setiap 5 detik. Pastikan kamu membuka halaman ini sekali dan klik <strong>Izinkan</strong> saat diminta izin notifikasi.</p>
+
+<script>
+/*
+  EDITABLE VALUES (sudah terisi dengan bin kamu)
+  - BIN_ID: id bin kamu
+*/
+const BIN_ID = "689f328dd0ea881f4059e086"; // <- BIN ID kamu
+let lastTimestamp = 0;
+const POLL_INTERVAL = 5000; // ms
+
+const $status = document.getElementById('status');
+
+function setStatus(t){
+  $status.textContent = t;
+}
+
+// 1) Daftarkan service worker
+async function registerSW(){
+  if (!('serviceWorker' in navigator)) {
+    setStatus('Service Worker tidak didukung di browser ini.');
+    throw new Error('no-sw');
+  }
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    console.log('SW registered', reg.scope);
+    setStatus('Service Worker terdaftar. Minta izin notifikasi selanjutnya...');
+    return reg;
+  } catch (err) {
+    console.error('SW register failed', err);
+    setStatus('Gagal mendaftar Service Worker.');
+    throw err;
+  }
+}
+
+// 2) Minta permission notifikasi (user)
+async function askPermission(){
+  if (!('Notification' in window)) {
+    setStatus('Browser tidak mendukung notifikasi.');
+    throw new Error('no-notification');
+  }
+  const perm = await Notification.requestPermission();
+  setStatus('Izin notifikasi: ' + perm);
+  if (perm !== 'granted') throw new Error('permission-denied');
+  return perm;
+}
+
+// 3) Polling JSONBin every X seconds
+async function pollLoop(){
+  try {
+    // fetch latest
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    const record = j.record || {};
+    const ts = record.timestamp || 0;
+    if (ts && ts > lastTimestamp) {
+      lastTimestamp = ts;
+      const title = record.title || 'Notifikasi';
+      const body  = record.message || '';
+      const icon  = record.icon || '';
+      // show notification via SW registration
+      const reg = await navigator.serviceWorker.ready;
+      // Use showNotification on registration for better compatibility
+      reg.showNotification(title, {
+        body: body,
+        icon: icon || 'https://cdn-icons-png.flaticon.com/512/1827/1827272.png',
+        badge: icon || undefined,
+        data: record.url || undefined,
+        vibrate: [60,40,60]
+      });
+      console.log('Displayed notification', title, body);
+    }
+  } catch (err) {
+    console.warn('Polling error', err);
+    // don't flood status with every error; show a friendly message
+    setStatus('Terdeteksi error polling (cek console).');
+  } finally {
+    setTimeout(pollLoop, POLL_INTERVAL);
+  }
+}
+
+// Boot sequence
+(async function init(){
+  try {
+    await registerSW();
+    await askPermission();
+    setStatus('Aktif — menunggu notifikasi (polling every 5s)');
+    // start polling
+    pollLoop();
+  } catch (e) {
+    console.error('Init failed', e);
+    if (e.message === 'permission-denied') {
+      setStatus('Izin notifikasi ditolak. Silakan beri izin untuk menerima notifikasi.');
+    } else {
+      setStatus('Inisialisasi gagal — lihat console.');
+    }
+  }
+})();
+</script>
+</body>
+</html>
