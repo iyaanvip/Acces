@@ -14,18 +14,23 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Notifikasi saat background (tab ditutup/minimized)
 messaging.onBackgroundMessage((payload) => {
-  const { title, body, icon, link } = payload.data;
+  const n = payload.notification || {};
+  const d = payload.data || {};
+  const title = n.title || d.title || 'Pesan';
+  const body  = n.body  || d.body  || '';
+  const icon  = n.icon  || d.icon  || undefined;
+  const url   = n.click_action || d.click_action || d.url || '/';
+
   self.registration.showNotification(title, {
-    body: body,
-    icon: icon,
-    data: { link: link }
+    body, icon, data: { url }
   });
 });
 
+// Klik notifikasi → buka URL
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  if (event.notification.data.link) {
-    event.waitUntil(clients.openWindow(event.notification.data.link));
-  }
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(clients.openWindow(url));
 });
