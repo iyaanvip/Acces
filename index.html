@@ -2,11 +2,12 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Realtime Notifikasi - User</title>
+  <title>Aktifkan Notifikasi</title>
 </head>
 <body>
-  <h1>Notifikasi Realtime</h1>
-  <button id="enableNotif">Aktifkan Notifikasi</button>
+  <h1>Aktifkan Notifikasi</h1>
+  <button id="enableNotif">Aktifkan</button>
+  <div id="status"></div>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
@@ -25,26 +26,35 @@
     };
 
     firebase.initializeApp(firebaseConfig);
-    const messaging = firebase.messaging();
     const db = firebase.database();
+    const messaging = firebase.messaging();
 
-    // Register custom service worker sw.js
-    navigator.serviceWorker.register('sw.js').then((registration) => {
-      messaging.useServiceWorker(registration);
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      if (messaging.useServiceWorker) messaging.useServiceWorker(reg);
     });
 
     document.getElementById("enableNotif").addEventListener("click", async () => {
+      const status = document.getElementById("status");
       try {
-        await Notification.requestPermission();
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") {
+          status.textContent = "Izin ditolak.";
+          return;
+        }
         const token = await messaging.getToken({
           vapidKey: "BFJKG8J6cnoeIESulLITwBFqNGIQ8CA74fELmWOR5tox-87kIb3HlfZBijG4FfiuNkBOYp0BNbweTXpd46PpS10"
         });
-        if (token) {
-          db.ref("tokens").push(token);
-          alert("Notifikasi diaktifkan!");
+        if (!token) {
+          status.textContent = "Gagal mendapatkan token.";
+          return;
         }
+        const snap = await db.ref("tokens").once("value");
+        const exists = Object.values(snap.val() || {}).includes(token);
+        if (!exists) await db.ref("tokens").push(token);
+        status.textContent = "Notifikasi diaktifkan.";
       } catch (err) {
-        console.error("Gagal dapat token:", err);
+        console.error(err);
+        status.textContent = "Terjadi kesalahan.";
       }
     });
   </script>
