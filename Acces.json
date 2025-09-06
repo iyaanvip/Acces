@@ -1,18 +1,5 @@
-[
-  {
-    "username": "yan",
-    "password": "yan890FCG"
-  },
-  {
-    "username": "yuuu",
-    "password": "yuuu890FCG"
-  },
-  {
-    "username": "yuuucx",
-    "password": "yuuucx890FCG"
-  },
-  {
-    "username": "yanOnci",
-    "password": "yanOnci890FCG"
-  }
-]
+{
+  "tokens": [
+    "7827210199:AAEt9pbRokUrN1ImlId0PpOoiJ-PN4oCXoE"
+  ]
+}
